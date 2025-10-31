@@ -1,10 +1,11 @@
 from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-import tensorflow as tf
-from keras.layers import TFSMLayer   # NEW
+from keras.layers import TFSMLayer
 from PIL import Image
 import numpy as np
 import io
+import os
+import uvicorn
 
 app = FastAPI()
 
@@ -16,21 +17,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ✅ Load exported SavedModel as a callable layer
-MODEL_PATH = "../model/cat_dog_model_export"
+# Use the correct model path
+MODEL_PATH = "model/cat_dog_model_export"
 model_layer = TFSMLayer(MODEL_PATH, call_endpoint="serving_default")
 
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
-    # read + preprocess image
     image_bytes = await file.read()
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img = img.resize((224, 224))
     arr = np.expand_dims(np.array(img) / 255.0, axis=0).astype("float32")
 
-    # run inference
     preds = model_layer(arr)
-    # `preds` is a dict of outputs; extract first tensor
     if isinstance(preds, dict):
         pred = list(preds.values())[0].numpy()[0][0]
     else:
@@ -38,3 +36,7 @@ async def predict(file: UploadFile = File(...)):
 
     result = "Dog" if pred > 0.5 else "Cat"
     return {"result": result}
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
